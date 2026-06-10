@@ -1,0 +1,7 @@
+*.jar
+*.ses
+board.dsn
+routing_result.json
+__pycache__/
+*.pyc
+.venv/
