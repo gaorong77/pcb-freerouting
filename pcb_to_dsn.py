@@ -90,23 +90,20 @@ def segments_to_polygon(segments):
 # ---------------------------------------------------------------------------
 # Component / padstack helpers
 # ---------------------------------------------------------------------------
+# Use a single small SMD padstack for all pins.
+# The bbox in pcb_data.json is the component COURTYARD, not the actual copper pad.
+# Using courtyard as pad would block the entire board; use a small fixed pad instead.
+SMALL_PAD = "SmallSMD"
+SMALL_PAD_R = 100   # 0.1 mm half-size (100 units = 0.1 mm)
+
+
 def pad_key(p):
-    bx, by, sx, sy = p["bbox"]   # [xmax, ymax, xmin, ymin]
-    return ((bx - sx) // 2, (by - sy) // 2)
-
-
-def pad_name(hw, hh):
-    return f"Pad_{hw}x{hh}"
+    """All pins share the same small padstack."""
+    return SMALL_PAD
 
 
 def collect_padstacks(components):
-    shapes = {}
-    for c in components:
-        for p in c["pins"]:
-            k = pad_key(p)
-            if k not in shapes:
-                shapes[k] = pad_name(*k)
-    return shapes
+    return {SMALL_PAD: SMALL_PAD}
 
 
 # ---------------------------------------------------------------------------
@@ -115,20 +112,28 @@ def collect_padstacks(components):
 def write_dsn(data, out_path):
     comps = data["components"]
     keepin_segs = data["route_keepins"][0]["segments"]
-    boundary_pts = segments_to_polygon(keepin_segs)
+    raw_boundary = segments_to_polygon(keepin_segs)
     padstacks = collect_padstacks(comps)
 
-    # Build per-refdes component structure:
-    # {refdes: {"pkg": str, "cx": float, "cy": float,
-    #           "pins": [{"num": str, "rel_x": int, "rel_y": int,
-    #                     "pad_key": (hw, hh)}]}}
+    # Translate ALL coordinates so board origin = (0, 0).
+    # This drastically reduces Freerouting internal data structure memory.
+    all_x = [p[0] for p in raw_boundary]
+    all_y = [p[1] for p in raw_boundary]
+    ox = int(min(all_x))
+    oy = int(min(all_y))
+    boundary_pts = [(x - ox, y - oy) for x, y in raw_boundary]
+    print(f"[pcb_to_dsn] Origin offset: dx={ox} dy={oy}")
+    print(f"[pcb_to_dsn] Board extent after translation: "
+          f"{(max(all_x)-ox)/1000:.1f} x {(max(all_y)-oy)/1000:.1f} mm")
+
+    # Build per-refdes component structure (coordinates translated).
     comp_map = {}
     for c in comps:
         pins = c["pins"]
         if not pins:
             continue
-        cx = round(sum(p["x"] for p in pins) / len(pins))
-        cy = round(sum(p["y"] for p in pins) / len(pins))
+        cx = round(sum(p["x"] for p in pins) / len(pins)) - ox
+        cy = round(sum(p["y"] for p in pins) / len(pins)) - oy
         comp_map[c["refdes"]] = {
             "pkg":  c.get("package", "PKG"),
             "cx":   cx,
@@ -191,40 +196,40 @@ def write_dsn(data, out_path):
 
     # ---- library ----
     W('  (library')
-    # Padstacks
-    for (hw, hh), pname in sorted(padstacks.items()):
-        W(f'    (padstack "{pname}"')
-        W(f'      (shape (rect F.Cu {-hw} {-hh} {hw} {hh}))')
+    # Padstacks (unquoted names: alphanumeric+underscore are safe)
+    for pname in sorted(padstacks.keys()):
+        W(f'    (padstack {pname}')
+        W(f'      (shape (rect F.Cu {-SMALL_PAD_R} {-SMALL_PAD_R} {SMALL_PAD_R} {SMALL_PAD_R}))')
         W(f'      (attach off)')
         W(f'    )')
     # Via padstack
-    W(f'    (padstack "{VIA_NAME}"')
+    W(f'    (padstack {VIA_NAME}')
     for lyr in ALL_LAYERS:
         W(f'      (shape (circle {lyr} {VIA_PAD}))')
     W(f'      (hole {VIA_DRILL})')
     W(f'      (attach off)')
     W(f'    )')
-    # Images (one per refdes = one per component instance)
+    # Images: one per refdes, all identifiers unquoted
     for refdes, info in sorted(comp_map.items()):
-        W(f'    (image "{refdes}"')
+        W(f'    (image {refdes}')
         for pin in info["pins"]:
-            pname = pad_name(*pin["pk"])
-            W(f'      (pin "{pname}" "{pin["num"]}" {fmt(pin["rel_x"])} {fmt(pin["rel_y"])})')
+            W(f'      (pin {SMALL_PAD} {pin["num"]} {fmt(pin["rel_x"])} {fmt(pin["rel_y"])})')
         W(f'    )')
     W('  )')
 
     # ---- placement ----
     W('  (placement')
     for refdes, info in sorted(comp_map.items()):
-        W(f'    (component "{refdes}"')
-        W(f'      (place "{refdes}" {fmt(info["cx"])} {fmt(info["cy"])} front 0)')
+        W(f'    (component {refdes}')
+        W(f'      (place {refdes} {fmt(info["cx"])} {fmt(info["cy"])} front 0)')
         W(f'    )')
     W('  )')
 
     # ---- network ----
+    # Pin references must be unquoted: REFDES-PINNUM (Freerouting DSN standard)
     W('  (network')
     for net_name, pin_list in sorted(route_nets.items()):
-        pin_ids = " ".join(f'"{r}-{n}"' for r, n in pin_list)
+        pin_ids = " ".join(f'{r}-{n}' for r, n in pin_list)
         W(f'    (net "{net_name}"')
         W(f'      (pins {pin_ids})')
         W(f'    )')
