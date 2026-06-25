@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCB Freerouting Viewer</title>
+<meta name="description" content="PCB Freerouting interactive board viewer for pcb-kelsie/pcb-freerouting.">
+<style>
+:root{
+  --bg:#07111f;
+  --panel:#0b1a2c;
+  --panel2:#10233a;
+  --line:#1c3d5e;
+  --text:#e8f3ff;
+  --muted:#8aa2ba;
+  --accent:#38d9ff;
+  --warn:#ffcc66;
+  --top:#43e7ff;
+  --art03:#b06cff;
+  --art02:#ffb84d;
+  --bottom:#5d8dff;
+  --pad:#b87333;
+  --via:#f4e38a;
+  --shape:#234263;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{height:100vh;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,"Segoe UI",Arial,sans-serif;display:flex;flex-direction:column}
+header{height:54px;background:linear-gradient(90deg,#0b1a2c,#10233a);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 18px;flex-shrink:0}
+h1{font-size:15px;letter-spacing:.12em;color:var(--accent);font-weight:800;white-space:nowrap}
+.stats{display:flex;gap:10px;margin-left:auto;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.stat{font-size:11px;color:var(--muted);background:#071827;border:1px solid #16324f;border-radius:8px;padding:5px 9px;line-height:1}.stat b{color:#fff;font-weight:700}.main{flex:1;display:flex;min-height:0}.sidebar{width:278px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}.side-section{padding:12px;border-bottom:1px solid #153554}.side-title{font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:#78ddff;margin-bottom:8px}.layer-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.chip{border:1px solid #1e4367;background:#0a1728;color:#cdefff;border-radius:8px;padding:7px 8px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:7px;user-select:none}.chip:hover{border-color:#3388bb}.chip.active{background:#12324e;border-color:var(--accent);box-shadow:0 0 0 1px rgba(56,217,255,.25) inset}.sw{width:18px;height:4px;border-radius:4px;box-shadow:0 0 10px currentColor}.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:6px}.btn{border:1px solid #1e4367;background:#0a1728;color:#cdefff;border-radius:8px;padding:7px 8px;font-size:12px;cursor:pointer}.btn:hover{border-color:var(--accent);color:#fff}.search{width:100%;border:1px solid #1e4367;background:#061321;color:#e8f3ff;border-radius:8px;padding:8px 10px;font-size:12px;outline:none}.search:focus{border-color:var(--accent)}.net-list{padding:8px;overflow:auto;min-height:0;flex:1}.net-item{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:11px;border:1px solid transparent;border-radius:7px;padding:5px 7px;color:#b7cfe6;cursor:pointer}.net-item:hover{background:#10233a}.net-item.active{border-color:var(--accent);background:#14304a;color:white}.badge{font-size:10px;color:#9eb7cf;background:#071827;border:1px solid #1e4367;border-radius:10px;padding:1px 6px;white-space:nowrap}.viewer{flex:1;position:relative;min-width:0;background:radial-gradient(circle at 50% 50%,#0c1f32 0,#07111f 70%)}#canvas{display:block;width:100%;height:100%;cursor:crosshair}.hud{position:absolute;left:12px;bottom:12px;right:12px;display:flex;gap:10px;align-items:center;pointer-events:none}.hud span{background:rgba(7,17,31,.86);border:1px solid #1e4367;border-radius:8px;padding:6px 9px;font-size:11px;color:#aac5df}.hud .grow{margin-left:auto}.loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(7,17,31,.78);z-index:5}.loading-card{width:min(520px,90vw);border:1px solid #1e4367;border-radius:16px;background:#0b1a2c;padding:22px;text-align:center;box-shadow:0 20px 70px rgba(0,0,0,.35)}.loading-card h2{font-size:16px;color:var(--accent);margin-bottom:8px}.loading-card p{font-size:12px;color:var(--muted);line-height:1.6}.hidden{display:none!important}.small{font-size:10px;color:#7892aa;margin-top:8px;line-height:1.5}.kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#fff;background:#061321;border:1px solid #1e4367;border-radius:4px;padding:1px 4px}
+</style>
+</head>
+<body>
+<header>
+  <h1>PCB FREEROUTING VIEWER</h1>
+  <div class="stats">
+    <div class="stat">Board <b id="stat-board">--</b></div>
+    <div class="stat">Components <b id="stat-components">--</b></div>
+    <div class="stat">Pins <b id="stat-pins">--</b></div>
+    <div class="stat">Shapes <b id="stat-shapes">--</b></div>
+    <div class="stat">Nets <b id="stat-nets">--</b></div>
+  </div>
+</header>
+<div class="main">
+  <aside class="sidebar">
+    <section class="side-section">
+      <div class="side-title">Layers</div>
+      <div class="layer-grid" id="layers"></div>
+    </section>
+    <section class="side-section">
+      <div class="side-title">View</div>
+      <div class="toolbar">
+        <button class="btn" id="fit-btn">Fit Board</button>
+        <button class="btn" id="clear-btn">Clear Net</button>
+      </div>
+      <div class="small">滚轮缩放，拖拽平移；点击 net 只高亮对应网络。</div>
+    </section>
+    <section class="side-section">
+      <div class="side-title">Net Filter</div>
+      <input class="search" id="net-filter" placeholder="搜索 net / refdes / pin...">
+    </section>
+    <div class="net-list" id="net-list"></div>
+  </aside>
+  <main class="viewer">
+    <canvas id="canvas"></canvas>
+    <div class="hud">
+      <span id="pos">x=-- y=--</span>
+      <span id="hover">ready</span>
+      <span class="grow">当前图层：<b id="layer-label">ALL</b></span>
+    </div>
+    <div class="loading" id="loading"><div class="loading-card"><h2>Loading PCB data</h2><p>正在读取同目录下的 <span class="kbd">pcb_data.json</span>。如果在 GitHub Pages 中打开，请确认该文件已随仓库发布。</p><p class="small" id="load-detail"></p></div></div>
+  </main>
+</div>
+<script>
+const LAYERS = [
+  {id:'ALL', label:'ALL', color:'#e8f3ff'},
+  {id:'TOP', label:'TOP', color:getCss('--top')},
+  {id:'ART03', label:'ART03', color:getCss('--art03')},
+  {id:'ART02', label:'ART02', color:getCss('--art02')},
+  {id:'BOTTOM', label:'BOTTOM', color:getCss('--bottom')},
+];
+const POUR_NETS = new Set(['D_GND','AUDIO_GND','HPH_REF1','USB_VBUS_C1','SPK1_OUT_N1','SPK1_OUT_P1']);
+let pcb=null;
+let bounds=null;
+let activeLayer='ALL';
+let activeNet=null;
+let netFilter='';
+let viewX=0, viewY=0, zoom=1;
+let dragging=false, lastX=0, lastY=0;
+const cvs=document.getElementById('canvas');
+const ctx=cvs.getContext('2d');
+function getCss(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim();}
+function normalizeLayer(layer){
+  if(!layer) return 'UNKNOWN';
+  const s=String(layer).toUpperCase();
+  if(s.includes('TOP')) return 'TOP';
+  if(s.includes('ART03')) return 'ART03';
+  if(s.includes('ART02')) return 'ART02';
+  if(s.includes('BOTTOM') || s.includes('BOT')) return 'BOTTOM';
+  return s.replace('ETCH/','');
+}
+function layerColor(layer){
+  const l=normalizeLayer(layer);
+  if(l==='TOP') return getCss('--top');
+  if(l==='ART03') return getCss('--art03');
+  if(l==='ART02') return getCss('--art02');
+  if(l==='BOTTOM') return getCss('--bottom');
+  return '#d7e7ff';
+}
+function shouldShowLayer(layer){return activeLayer==='ALL' || normalizeLayer(layer)===activeLayer;}
+function shouldDimNet(net){return activeNet && net!==activeNet;}
+async function loadData(){
+  const detail=document.getElementById('load-detail');
+  try{
+    const res=await fetch('pcb_data.json',{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status+' while loading pcb_data.json');
+    pcb=await res.json();
+    detail.textContent='数据读取完成，正在构建索引。';
+    init();
+    document.getElementById('loading').classList.add('hidden');
+  }catch(err){
+    detail.textContent=err.message;
+    drawError(err);
+  }
+}
+function collectPoints(){
+  const pts=[];
+  for(const outline of pcb.board_outlines||[]) for(const s of outline.segments||[]) { pts.push(s.start,s.end); if(s.center) pts.push([s.center[0]-s.radius,s.center[1]-s.radius],[s.center[0]+s.radius,s.center[1]+s.radius]); }
+  for(const keep of pcb.route_keepins||[]) for(const s of keep.segments||[]) { pts.push(s.start,s.end); }
+  for(const sh of pcb.shapes||[]) for(const p of sh.polygon||[]) pts.push(p);
+  for(const c of pcb.components||[]) for(const p of c.pins||[]) { pts.push([p.x,p.y]); if(p.bbox){pts.push([p.bbox[0],p.bbox[1]],[p.bbox[2],p.bbox[3]]);} }
+  return pts.filter(Boolean);
+}
+function computeBounds(){
+  const pts=collectPoints();
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(const [x,y] of pts){minX=Math.min(minX,x); maxX=Math.max(maxX,x); minY=Math.min(minY,y); maxY=Math.max(maxY,y);}
+  const pad=Math.max(maxX-minX,maxY-minY)*0.04;
+  return {minX:minX-pad,maxX:maxX+pad,minY:minY-pad,maxY:maxY+pad,w:maxX-minX+2*pad,h:maxY-minY+2*pad};
+}
+function init(){
+  bounds=computeBounds();
+  buildLayers();
+  buildNetList();
+  updateStats();
+  resize();
+  fitBoard();
+  draw();
+}
+function updateStats(){
+  const comps=pcb.components||[];
+  const pins=comps.flatMap(c=>c.pins||[]);
+  const nets=new Set(pins.map(p=>p.net).filter(Boolean));
+  document.getElementById('stat-board').textContent=`${(bounds.w/1000).toFixed(1)} x ${(bounds.h/1000).toFixed(1)} mm`;
+  document.getElementById('stat-components').textContent=comps.length;
+  document.getElementById('stat-pins').textContent=pins.length;
+  document.getElementById('stat-shapes').textContent=(pcb.shapes||[]).length;
+  document.getElementById('stat-nets').textContent=nets.size;
+}
+function buildLayers(){
+  const root=document.getElementById('layers');
+  root.innerHTML='';
+  for(const l of LAYERS){
+    const el=document.createElement('div');
+    el.className='chip'+(l.id===activeLayer?' active':'');
+    el.innerHTML=`<span class="sw" style="background:${l.color};color:${l.color}"></span><span>${l.label}</span>`;
+    el.addEventListener('click',()=>{activeLayer=l.id; document.getElementById('layer-label').textContent=l.id; buildLayers(); buildNetList(); draw();});
+    root.appendChild(el);
+  }
+}
+function netIndex(){
+  const m=new Map();
+  for(const c of pcb.components||[]) for(const p of c.pins||[]){
+    if(!p.net) continue;
+    if(!m.has(p.net)) m.set(p.net,{pins:[], refs:new Set(), layers:new Set(), pour:POUR_NETS.has(p.net)});
+    const r=m.get(p.net); r.pins.push({component:c,pin:p}); r.refs.add(c.refdes); r.layers.add(normalizeLayer(p.layer));
+  }
+  for(const sh of pcb.shapes||[]){
+    if(!sh.net) continue;
+    if(!m.has(sh.net)) m.set(sh.net,{pins:[], refs:new Set(), layers:new Set(), pour:POUR_NETS.has(sh.net)});
+    const r=m.get(sh.net); r.layers.add(normalizeLayer(sh.layer)); r.pour=r.pour||POUR_NETS.has(sh.net);
+  }
+  return m;
+}
+function buildNetList(){
+  const list=document.getElementById('net-list');
+  list.innerHTML='';
+  const q=netFilter.trim().toLowerCase();
+  const rows=[...netIndex().entries()].filter(([net,r])=>{
+    if(activeLayer!=='ALL' && !r.layers.has(activeLayer)) return false;
+    if(!q) return true;
+    return net.toLowerCase().includes(q) || [...r.refs].some(x=>x.toLowerCase().includes(q)) || r.pins.some(x=>String(x.pin.number).toLowerCase().includes(q));
+  }).sort(([a,ra],[b,rb])=>Number(rb.pour)-Number(ra.pour)||a.localeCompare(b));
+  for(const [net,r] of rows){
+    const el=document.createElement('div');
+    el.className='net-item'+(activeNet===net?' active':'');
+    el.innerHTML=`<span>${net}</span><span class="badge">${r.pins.length}p ${r.pour?'pour':'net'}</span>`;
+    el.title=[...r.refs].join(', ');
+    el.addEventListener('click',()=>{activeNet=activeNet===net?null:net; buildNetList(); draw();});
+    list.appendChild(el);
+  }
+  document.getElementById('hover').textContent=`${rows.length} nets shown`;
+}
+function resize(){
+  const r=cvs.parentElement.getBoundingClientRect();
+  const dpr=window.devicePixelRatio||1;
+  cvs.width=Math.max(1,Math.floor(r.width*dpr));
+  cvs.height=Math.max(1,Math.floor(r.height*dpr));
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+function toScreen(x,y){return [x*zoom+viewX, -y*zoom+viewY];}
+function fromScreen(sx,sy){return [(sx-viewX)/zoom, -(sy-viewY)/zoom];}
+function fitBoard(){
+  const r=cvs.getBoundingClientRect();
+  zoom=Math.min((r.width-60)/bounds.w,(r.height-60)/bounds.h);
+  viewX=(r.width-bounds.w*zoom)/2-bounds.minX*zoom;
+  viewY=(r.height-bounds.h*zoom)/2+bounds.maxY*zoom;
+  draw();
+}
+function drawError(err){
+  document.getElementById('loading').classList.add('hidden');
+  resize();
+  ctx.fillStyle='#07111f'; ctx.fillRect(0,0,cvs.width,cvs.height);
+  ctx.fillStyle='#ff6b6b'; ctx.font='16px monospace'; ctx.fillText('Viewer load failed: '+err.message,24,42);
+  ctx.fillStyle='#a8bed4'; ctx.font='13px monospace'; ctx.fillText('Check that pcb_data.json exists next to index.html on GitHub Pages.',24,72);
+}
+function draw(){
+  if(!pcb||!bounds) return;
+  const r=cvs.getBoundingClientRect();
+  ctx.clearRect(0,0,r.width,r.height);
+  ctx.fillStyle='#07111f'; ctx.fillRect(0,0,r.width,r.height);
+  drawGrid(r.width,r.height);
+  for(const outline of pcb.board_outlines||[]) drawSegments(outline.segments||[],'#8aa2ba',2.2,false);
+  for(const keep of pcb.route_keepins||[]) drawSegments(keep.segments||[],'rgba(74,144,226,.55)',1.3,true);
+  drawShapes();
+  drawTraces();
+  drawPins();
+  drawVias();
+}
+function drawGrid(w,h){
+  ctx.save(); ctx.strokeStyle='rgba(80,140,190,.09)'; ctx.lineWidth=1;
+  const step=Math.max(20,1000*zoom);
+  const [x0,y0]=fromScreen(0,h), [x1,y1]=fromScreen(w,0);
+  for(let x=Math.floor(x0/1000)*1000; x<x1; x+=1000){const [sx]=toScreen(x,0); ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,h); ctx.stroke();}
+  for(let y=Math.floor(y0/1000)*1000; y<y1; y+=1000){const [,sy]=toScreen(0,y); ctx.beginPath(); ctx.moveTo(0,sy); ctx.lineTo(w,sy); ctx.stroke();}
+  ctx.restore();
+}
+function drawSegments(segs,color,width,dashed){
+  ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=width; ctx.lineCap='round'; ctx.lineJoin='round'; if(dashed) ctx.setLineDash([6,5]);
+  ctx.beginPath();
+  for(const seg of segs){
+    const [sx,sy]=toScreen(seg.start[0],seg.start[1]);
+    const [ex,ey]=toScreen(seg.end[0],seg.end[1]);
+    if(seg.type==='arc' && seg.center && seg.arc_mid){
+      const [cx,cy]=toScreen(seg.center[0],seg.center[1]);
+      const a1=Math.atan2(sy-cy,sx-cx), a2=Math.atan2(ey-cy,ex-cx);
+      const [mx,my]=toScreen(seg.arc_mid[0],seg.arc_mid[1]);
+      const am=Math.atan2(my-cy,mx-cx);
+      let d12=(a2-a1+Math.PI*2)%(Math.PI*2), d1m=(am-a1+Math.PI*2)%(Math.PI*2);
+      const ccw=d1m<=d12;
+      ctx.moveTo(sx,sy); ctx.arc(cx,cy,Math.hypot(sx-cx,sy-cy),a1,a2,!ccw);
+    }else{ctx.moveTo(sx,sy); ctx.lineTo(ex,ey);}
+  }
+  ctx.stroke(); ctx.restore();
+}
+function drawShapes(){
+  for(const sh of pcb.shapes||[]){
+    if(!shouldShowLayer(sh.layer)) continue;
+    const dim=shouldDimNet(sh.net);
+    const poly=sh.polygon||[]; if(poly.length<3) continue;
+    const color=layerColor(sh.layer);
+    ctx.save(); ctx.globalAlpha=dim?.08:.26; ctx.fillStyle=color; ctx.strokeStyle=dim?'rgba(255,255,255,.08)':color; ctx.lineWidth=1;
+    pathPoly(poly); ctx.fill(); ctx.stroke();
+    for(const v of sh.voids||[]){ctx.globalCompositeOperation='destination-out'; pathPoly(v); ctx.fill(); ctx.globalCompositeOperation='source-over';}
+    ctx.restore();
+  }
+}
+function pathPoly(poly){
+  const [x0,y0]=toScreen(poly[0][0],poly[0][1]); ctx.beginPath(); ctx.moveTo(x0,y0);
+  for(let i=1;i<poly.length;i++){const [x,y]=toScreen(poly[i][0],poly[i][1]); ctx.lineTo(x,y);} ctx.closePath();
+}
+function drawTraces(){
+  for(const tr of pcb.traces||[]){
+    if(!shouldShowLayer(tr.layer) || shouldDimNet(tr.net)) continue;
+    const pts=tr.points||tr.pts||[]; if(pts.length<2) continue;
+    ctx.save(); ctx.strokeStyle=layerColor(tr.layer); ctx.lineWidth=Math.max(1.2,(tr.width||120)*zoom); ctx.lineCap='round'; ctx.lineJoin='round';
+    ctx.beginPath(); const [x0,y0]=toScreen(pts[0][0],pts[0][1]); ctx.moveTo(x0,y0); for(let i=1;i<pts.length;i++){const [x,y]=toScreen(pts[i][0],pts[i][1]); ctx.lineTo(x,y);} ctx.stroke(); ctx.restore();
+  }
+}
+function drawPins(){
+  for(const c of pcb.components||[]) for(const p of c.pins||[]){
+    if(!shouldShowLayer(p.layer)) continue;
+    const active=activeNet && p.net===activeNet;
+    const dim=shouldDimNet(p.net);
+    const b=p.bbox||[p.x+120,p.y+120,p.x-120,p.y-120];
+    const minX=Math.min(b[0],b[2]), maxX=Math.max(b[0],b[2]);
+    const minY=Math.min(b[1],b[3]), maxY=Math.max(b[1],b[3]);
+    const [x1,y1]=toScreen(minX,maxY), [x2,y2]=toScreen(maxX,minY);
+    ctx.save(); ctx.globalAlpha=dim?.16:(active?1:.68); ctx.fillStyle=active?'#ffffff':getCss('--pad'); ctx.strokeStyle=active?'#38d9ff':'rgba(255,220,160,.45)'; ctx.lineWidth=active?2:1;
+    ctx.fillRect(x1,y1,x2-x1,y2-y1); ctx.strokeRect(x1,y1,x2-x1,y2-y1); ctx.restore();
+  }
+}
+function drawVias(){
+  for(const v of pcb.vias||[]){
+    if(!shouldShowLayer(v.layer)) continue;
+    if(shouldDimNet(v.net)) continue;
+    const [x,y]=toScreen(v.x,v.y); const r=Math.max(3,(v.radius||220)*zoom);
+    ctx.save(); ctx.fillStyle=getCss('--via'); ctx.strokeStyle='#5b4412'; ctx.lineWidth=Math.max(1,70*zoom); ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill(); ctx.stroke(); ctx.restore();
+  }
+}
+window.addEventListener('resize',()=>{resize(); draw();});
+document.getElementById('fit-btn').addEventListener('click',fitBoard);
+document.getElementById('clear-btn').addEventListener('click',()=>{activeNet=null; buildNetList(); draw();});
+document.getElementById('net-filter').addEventListener('input',e=>{netFilter=e.target.value; buildNetList();});
+cvs.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=cvs.getBoundingClientRect(); const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const factor=e.deltaY<0?1.14:1/1.14;
+  viewX=mx-(mx-viewX)*factor; viewY=my-(my-viewY)*factor; zoom*=factor; draw();
+},{passive:false});
+cvs.addEventListener('mousedown',e=>{dragging=true; lastX=e.clientX; lastY=e.clientY; cvs.style.cursor='grabbing';});
+window.addEventListener('mouseup',()=>{dragging=false; cvs.style.cursor='crosshair';});
+cvs.addEventListener('mousemove',e=>{
+  if(dragging){viewX+=e.clientX-lastX; viewY+=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY; draw();}
+  const rect=cvs.getBoundingClientRect(); const [x,y]=fromScreen(e.clientX-rect.left,e.clientY-rect.top);
+  document.getElementById('pos').textContent=`x=${(x/1000).toFixed(3)}mm y=${(y/1000).toFixed(3)}mm`;
+});
+loadData();
+</script>
+</body>
+</html>
